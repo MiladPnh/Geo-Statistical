@@ -1,0 +1,50 @@
+Hey Milad,
+
+I hope you are enjoying your break so far! For this project, I worked exclusively in R using the Raster package (https://www.rdocumentation.org/packages/raster/versions/2.6-7). Here's how I calculated daily SWE difference (delta) and daily SWE accumulation. Because I had to write it very quickly in order to finish the project, this is not the most elegant or efficient code that I've produced. Anyway, here's the concise version of the code written to calculate delta SWE and accumulated SWE for Region 1:
+
+# Import Raster package
+library(raster)
+
+# Set data file paths:
+swe.fp = "path/to/SWE/data/files"
+region.fp = "path/to/region/data/files"
+
+# Open the .tif file for region, trim to extent of region mask
+setwd(region.fp)
+region1 = raster("Region_1.tif")
+region1 = trim(region1, values = NA)
+
+# Open SWE data files, combine into single stack objects for each year, stack both years together
+setwd(swe.fp)
+swe.2015 = stack(list.files(swe.fp, pattern = "2015_", recursive = TRUE, full.names = FALSE))
+swe.2016 = stack(list.files(swe.fp, pattern = "2016_", recursive = TRUE, full.names = FALSE))
+swe = stack(swe.2015, swe.2016)
+
+# Extract the layers (daily SWE data) that correspond to the region dates
+swe.r1 = swe[[358:391]]    # 358:391 are stack index values that correspond to dates used to generate Region 1 (12/24/15 - 1/26/16)
+ 
+# Resample mask to the resolution of the SWE data, crop the SWE data with region mask
+region1 = resample(region1, swe.r1[[1]], 'bilinear')
+swe.r1 = mask(swe.r1, region1)
+
+# Daily accumulation of SWE is just the daily average from the masked SWE files
+# SWE accumulates based on kriging of SNOTEL and COOP point data normalized with PRISM precip/temp. data (see Patrick Broxton's paper)
+swe.r1.daily.av = cellStats(swe.r1, mean)
+
+# Calculate daily difference in averaged values 
+delta.swe.r1 = vector('integer')
+for (i in 1:length(swe.r1.daily.av)){
+  delta.swe.r1[i+1] = swe.r1.daily.av[i+1] - swe.r1.daily.av[i]
+}
+delta.swe.r1 = delta.swe.r1[2:34]
+
+# Another way to do this would be to calculate the difference between each pixel and then take the average of each day
+swe.r1.daily.diff = swe.r1
+for (i in 2:nlayers(swe.r1)){
+  swe.r1.daily.diff[[i]] = swe.r1[[i]] - swe.r1[[i-1]]
+}
+swe.r1.daily.diff.av = cellStats(swe.r1.daily.diff, mean)
+
+From here, you can show the area-averaged daily SWE (swe.r1.daily.av) and delta SWE (delta.swe.r1) as a simple timeseries plot.
+
+You can do the same thing for precipitation where the accumulated values are calculated by adding the daily snowfall/precipitation data [precipitation(i)] to the previous day's accumulated values [accumulation(i-1)]. To initialize the accumulation values, you should set the first day's accumulation to the first day's precipitation. 
